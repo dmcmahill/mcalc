@@ -178,9 +178,9 @@ function computeAnalyzeForm(flag)
     }
 
 
-/* check the W and L values */
-    if (!checkNumber(document.mstripForm.W, 0.01*(25.4E-6/PHYSSF), 
-                     500*(25.4E-6/PHYSSF), "W", physUnits) ||
+/* check the W and L values, search for wmax and wmin to keep the other spot updated */
+    if (!checkNumber(document.mstripForm.W, 0.001*(25.4E-6/PHYSSF), 
+                     50000*(25.4E-6/PHYSSF), "W", physUnits) ||
         !checkNumber(document.mstripForm.L, 0, 1000000*25.4E-6/PHYSSF, "L", physUnits)) 
     {
         return null;
@@ -649,9 +649,9 @@ var lx = 1000;
  limits on the allowed range for w (in mils)
 XXX - should limit w/h, not w
 */
-var wmin = 0.01;
+var wmin = 0.001;
 //var wmax = 1000;
-var wmax = 499;
+var wmax = 49900;
 
 wmin = wmin*25.4e-6/PHYSSF;
 wmax = wmax*25.4e-6/PHYSSF;
