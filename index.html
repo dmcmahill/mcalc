@@ -1,0 +1,1627 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<HTML>
+<HEAD>
+<!--
+    wcalc, Copyright (C) Copyright (c) 1994-2003, 2010, 2019 Dan McMahill
+    wcalc comes with ABSOLUTELY NO WARRANTY.
+    This is free software, and you are welcome to redistribute it
+    under certain conditions.  See copying.html or LICENSE for details.
+-->
+
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="description" 
+content="Microstrip Transmission Line Analysis/Synthesis">
+
+<meta name="keywords" content="
+characteristic impedance,
+controlled impedance,
+controlled impedance trace,
+effective dielectric constant,
+effective permittivity,
+electrical length,
+impedance,
+microstrip,
+microstrip analysis,
+microstrip synthesis,
+microstrip transmission,
+microstrip transmission line,
+microstripline,
+microwave,
+microwave transmission,
+microwave transmission line,
+stripline,
+transmission line,
+
+">
+
+<TITLE>Microstrip Analysis/Synthesis Calculator</TITLE>
+<link rel="icon" href="favicon.ico" type="image/x-icon">      
+<link rel="shortcut icon" href="favicon.ico" type="image/x-icon">    
+
+<SCRIPT LANGUAGE="LiveScript">
+
+<!-- hide this script tag's contents from old browsers
+
+var RUNNINGS=0;
+
+// version for cookie storage and loading.
+// this value will let the page be backwards
+// compatible with older cookies from this page.
+var kCOOKIEVER=1.1;
+
+
+var physUnits="";
+var freqUnits="";
+
+function checkNumber(input, min, max, msg, units)
+{
+    msg = msg + " field has invalid data: " + input.value + " " + units;
+
+    var str = input.value;
+    for (var i = 0; i < str.length; i++) {
+        var ch = str.substring(i, i + 1)
+        if ((ch < "0" || "9" < ch) && ch != '.') {
+            alert(msg);
+            return false;
+        }
+    }
+    var num = 0 + str
+    if (num < min || max < num) {
+        alert(msg + " not in range [" + min + " " + units + ".." +
+              max + " " + units + "]");
+        return false;
+    }
+    input.value = str;
+    return true;
+}
+
+function computeField(input)
+{
+    if (input.value != null && input.value.length != 0)
+        input.value = "" + eval(input.value);
+    computeForm(input.form);
+}
+
+function sinh(x)
+{
+    return (Math.exp(x) - Math.exp(-x))/2;
+}
+
+function cosh(x)
+{
+    return (Math.exp(x) + Math.exp(-x))/2;
+}
+
+function tanh(x)
+{
+    return (sinh(x)/cosh(x));
+}
+
+function coth(x)
+{
+    return (cosh(x)/sinh(x));
+}
+
+
+function toSci(value,numDigits)
+{
+  with(Math){
+   var exponent = round(log(value)/log(10)-0.5);
+   var mant = round(pow(10,numDigits-1)*value/pow(10,exponent))/pow(10,numDigits-1);
+   }
+   return(mant + "E" + exponent);
+}
+
+
+rel=1;
+
+/*
+ * Effective dielectric constant from Hammerstad and Jensen
+ */
+function ee_HandJ(u,er)
+{
+
+  with(Math){
+
+  /* (4) from Hammerstad and Jensen */
+  var A = 1.0 + (1.0/49.0)
+    *log((pow(u,4.0) + pow((u/52.0),2.0))/(pow(u,4.0) + 0.432)) 
+    + (1.0/18.7)*log(1.0 + pow((u/18.1),3.0));
+  
+  /* (5) from Hammerstad and Jensen */
+  var B = 0.564*pow(((er-0.9)/(er+3.0)),0.053);
+
+  
+  /* 
+   * zero frequency effective permitivity.  (3) from Hammerstad and
+   * Jensen.  This is ee(ur,er) thats used by (9) in Hammerstad and
+   * Jensen.
+   */
+  var E0 = (er+1.0)/2.0 + ((er-1.0)/2.0)*pow((1.0 + 10.0/u),(-A*B));
+  }
+  return(E0);
+}
+
+/* 
+ * Characteristic impedance from (1) and (2) in Hammerstad and Jensen 
+ */
+function z0_HandJ(u)
+{
+
+  with(Math){
+  var LIGHTSPEED = 2.997925e8;
+  var FREESPACEZ0 = (4.0*PI*1.0e-7*LIGHTSPEED);
+  /* (2) from Hammerstad and Jensen.  'u' is the normalized width */
+  var F = 6.0 + (2.0*PI - 6.0)*exp(-pow((30.666/u),0.7528));
+
+  /* (1) from Hammerstad and Jensen */
+  var z01 = (FREESPACEZ0/(2*PI)) * log(F/u + sqrt(1.0 + pow((2/u),2.0)));
+  }
+  return(z01);
+}
+
+function computeAnalyzeForm(flag)
+{
+  if(flag == null)
+    flag = 0;
+
+/* check out the substrate table */
+    if( !checkSubstrate(document.mstripForm)){
+        return null;
+    }
+
+/* make sure there are W and L values */
+    if ((document.mstripForm.W.value == null || document.mstripForm.W.value.length == 0) ||
+        (document.mstripForm.L.value == null || document.mstripForm.L.value.length == 0)) {
+	alert("Both W and L must be filled in to analyze the line");
+        return null;
+    }
+
+
+/* check the W and L values */
+    if (!checkNumber(document.mstripForm.W, 0.01*(25.4E-6/PHYSSF), 
+                     500*(25.4E-6/PHYSSF), "W", physUnits) ||
+        !checkNumber(document.mstripForm.L, 0, 1000000*25.4E-6/PHYSSF, "L", physUnits)) 
+    {
+        return null;
+    }
+
+
+/*
+msg = "FREQSF = " + FREQSF;
+alert(msg);
+
+msg = "PHYSSF = " + PHYSSF;
+alert(msg);
+*/
+
+
+document.mstripForm.calcstatus.value="RUNNING";
+
+
+with(Math){
+
+/* load W and L values from form */
+var    w = eval(document.mstripForm.W.value);
+var    l = eval(document.mstripForm.L.value);
+
+/* load substrate values from form */
+
+var    er=eval(document.mstripForm.er.value);
+var    h=eval(document.mstripForm.H.value);
+var    t=eval(document.mstripForm.tmet.value);
+var    rho=eval(document.mstripForm.rho.value);
+var    rough=eval(document.mstripForm.rough.value);
+var    tand=eval(document.mstripForm.tand.value);
+
+var    f = eval(document.mstripForm.freq.value);
+
+
+       f = f*FREQSF;
+
+var    sf=25.4E-6;
+    w = w*PHYSSF;
+    l = l*PHYSSF;
+    h = h*PHYSSF;
+    t = t*PHYSSF;
+    rough = rough*PHYSSF;
+
+
+var    u = w/h;
+
+ if(t > 0){
+    /* find normalized metal thickness */
+    var T = t/h;
+
+    /* (6) from Hammerstad and Jensen */
+    var deltau1 = (T/PI)
+      *log(1.0 + 4.0*exp(1.0)/(T*pow(coth(sqrt(6.517*u)),2.0)));
+    
+    /* (7) from Hammerstad and Jensen */
+    var deltaur = 0.5*(1.0 + 1.0/cosh(sqrt(er-1.0)))*deltau1;
+
+    var deltau = deltaur;
+
+  }
+  else {
+    var deltau = 0.0;
+    var deltau1 = 0.0;
+    var deltaur = 0.0;
+  }
+  
+  var u1 = u + deltau1;
+  var ur = u + deltaur;
+
+var E0 = ee_HandJ(ur,er);
+
+  /*
+   * zero frequency characteristic impedance
+   * (8) from Hammerstad and Jensen
+   */
+  var z0 = z0_HandJ(ur)/sqrt(E0);
+
+  /* 
+   * zero frequency effective permitivity.
+   * (9) from Hammerstad and Jensen
+   */
+  var EFF0 = E0*pow(z0_HandJ(u1)/z0_HandJ(ur),2.0);
+
+
+var fn = 1e-7 * f * h;
+
+var P1 = 0.27488 + (0.6315 + (0.525 / (pow((1 + 0.157*fn),20))) )*u - 0.065683*exp(-8.7513*u);
+var P2 = 0.33622*(1 - exp(-0.03442*er));
+var P3 = 0.0363*exp(-4.6*u)*(1 - exp(-pow((fn / 3.87),4.97)));
+var P4 = 1 + 2.751*( 1 -  exp(-pow((er/15.916),8)));
+var P = P1*P2*pow(((0.1844 + P3*P4)*10*fn),1.5763);
+
+var EF = (EFF0 + er*P)/(1 + P);
+
+
+fn = 1e-6 * f * h;
+
+var R1 = 0.03891*(pow(er,1.4));
+var R2 = 0.267*(pow(u,7.0));
+var R3 = 4.766*exp(-3.228*(pow(u,0.641)));
+var R4 = 0.016 + pow((0.0514*er),4.524);
+var R5 = pow((fn/28.843),12.0);
+var R6 = 22.20*(pow(u,1.92));
+var R7 = 1.206 - 0.3144*exp(-R1)*(1 - exp(-R2));
+var R8 = 1.0 + 1.275*(1.0 -  exp(-0.004625*R3*pow(er,1.674)*pow(fn/18.365,2.745)));
+var R9 = (5.086*R4*R5/(0.3838 + 0.386*R4))*(exp(-R6)/(1 + 1.2992*R5));
+var R9 = R9 * (pow((er-1),6))/(1 + 10*pow((er-1),6));
+var R10 = 0.00044*(pow(er,2.136)) + 0.0184;
+var R11 = (pow((fn/19.47),6))/(1 + 0.0962*(pow((fn/19.47),6)));
+var R12 = 1 / (1 + 0.00245*u*u);
+var R13 = 0.9408*(pow(EF,R8)) - 0.9603;
+var R14 = (0.9408 - R9)*(pow(EFF0,R8))-0.9603;
+var R15 = 0.707*R10*(pow((fn/12.3),1.097));
+var R16 = 1 + 0.0503*er*er*R11*(1 - exp(-(pow((u/15),6))));
+var R17 = R7*(1 - 1.1241*(R12/R16)*exp(-0.026*(pow(fn,1.15656))-R15));
+
+var z0 = z0*(pow((R13/R14),R17));
+
+
+//velocity (meters/sec)
+var c = 2.997925e8;
+
+var v = c / sqrt(EF);
+
+
+// End correction (DAN should update this to include this section)
+//if(flag==2)
+{
+var z1 = 0.434907*((pow(EF,0.81) + 0.26)/(pow(EF,0.81) - 0.189))*(pow(u,0.8544) + 0.236)/(pow(u,0.8544) + 0.87);
+var z2 = 1 + (pow(u,0.371))/(2.358*er + 1);
+var z3 = 1 + (0.5274*atan(0.084*(pow(u,(1.9413 / z2)))))/(pow(EF,0.9236));
+var z4 = 1 + 0.0377*atan(0.067*(pow(u,1.456)))*(6 - 5*exp(0.036*(1-er)));
+var z5 = 1 - 0.218*exp(-7.5*u);
+
+var deltal = h * z1 * z3 * z5 / z4;
+}
+
+/*
+else
+{
+  var deltal = 0;
+}
+*/
+
+/*
+ length in wavelengths
+*/
+
+//var len= (l-deltal)/(v/f);
+var len= l/(v/f);
+/*
+ convert to degrees
+*/
+len = 360*len;
+
+
+/*
+ length in nano-seconds of delay
+*/
+//var td= 1e9*(l-deltal)/v;
+var td= 1e9*(l)/v;
+
+
+
+// Do losses
+if (flag == 1)
+  {
+   // Dielectric Losses
+
+   // loss in nepers/meter
+   var ld=(PI*f/v)*(er/EF)*((EF-1)/(er-1))*tand;
+   
+   // loss in dB/meter
+   ld = 20/log(10) * ld;
+
+   // loss in dB
+   ld = ld * l;
+
+
+   // Conduction Losses
+  
+
+   //
+   // calculate skin depth
+   //
+
+   // conductivity
+   var sigma = 5.8e7 /rho;
+
+   // permeability of free space
+   var mu = 4*PI*1e-7;
+
+   // skin depth in meters
+   var delta = sqrt(1/(PI*f*mu*sigma));
+
+
+   // warn the user if the loss calc is suspect.
+   if(t < 3*delta)
+     alert("Warning:  The metal thickness is less than\n" +
+           "three skin depths.  Use the loss results with\n" +
+           "caution.");
+
+   var depth=delta;
+
+   // if the skinDepth is greater than Tmet, assume current
+   // flows uniformly through  the conductor.  Then loss
+   // is just calculated from the dc resistance of the
+   // trace.  This is somewhat
+   // suspect, but I don't have time right now to come up
+   // with a better result.
+   if(delta <= t)
+   {
+   
+   // store the substrate parameters
+   erold = document.mstripForm.er.value;
+   // er
+   document.mstripForm.er.value = 1;
+   z2=computeAnalyzeForm();
+
+   // h
+   hold = document.mstripForm.H.value;
+   document.mstripForm.H.value = (h + delta)/PHYSSF;
+
+   // t
+   told = document.mstripForm.tmet.value;
+   document.mstripForm.tmet.value = (t - delta)/PHYSSF;
+
+   // w
+   wold = document.mstripForm.W.value;
+   document.mstripForm.W.value = (w - delta)/PHYSSF;
+
+
+   z1=computeAnalyzeForm();
+
+   // restore values
+   document.mstripForm.er.value = erold;
+   document.mstripForm.H.value = hold;
+   document.mstripForm.tmet.value = told;
+   document.mstripForm.W.value = wold;
+
+   // conduction losses, nepers per meter
+   var lc = (PI*f/c)*(z1 - z2)/z0;
+   }
+
+   // "dc" case.
+   else if(t > 0)
+   {
+     // resistance per meter = 1/(Area*conductivity)
+     var Res = 1/(w*t*sigma);  
+  
+     // conduction losses, nepers per meter
+     var lc = Res/(2*z0);
+
+     // change delta to be equal to the metal thickness for
+     // use in surface roughness correction
+     delta = t;
+   }
+
+   else
+     lc=0;
+
+   // loss in dB/meter
+   lc = (20/log(10)) * lc;
+
+   // loss in dB
+   lc = lc * l;
+
+   // factor due to surface roughness
+   lc = lc * (1 + (2/PI)*atan(1.4*pow(rough/delta,2)));
+
+   // Total Loss
+
+   loss = ld + lc;
+
+   var lossPerLen = loss/document.mstripForm.L.value;
+   var exponent = round(log(lossPerLen)/log(10)-0.5);
+   var mant = round(100*lossPerLen/pow(10,exponent))/100;
+
+   //var lossStr=mant + "E" + exponent;
+   var lossStr = toSci(lossPerLen,2);
+
+   
+   document.mstripForm.loss.value=round(rel*1000*loss)/(rel*1000);
+   document.mstripForm.lossPerLen.value=lossStr;
+   document.mstripForm.skinDepth.value=round(rel*1000*depth/PHYSSF)/(rel*1000);
+
+
+   document.mstripForm.delay.value=round(td*1000)/(1000);
+  
+   
+  }
+
+  var Lmdeltal = l-deltal;
+  document.mstripForm.deltal.value=round(rel*1000*deltal/PHYSSF)/(rel*1000);
+  document.mstripForm.Lmdeltal.value=round(rel*1000*(Lmdeltal/PHYSSF))/(rel*1000);
+
+  document.mstripForm.Z0.value=round(rel*1000*z0)/(rel*1000);
+  document.mstripForm.len.value=round(rel*100*len)/(rel*100);
+  document.mstripForm.keff.value=round(rel*10000*EF)/(rel*10000);
+}
+
+
+if(RUNNINGS==0)
+{
+document.mstripForm.calcstatus.value="DONE";
+}
+
+  return z0;
+
+}
+
+
+function checkSubstrate(form)
+{
+
+
+    var ok=0;
+    for(var i=0;i<document.mstripForm.funits.options.length;i++)
+    {
+            if(document.mstripForm.funits.options[i].selected == true)
+	    {
+                FREQSF = document.mstripForm.funits.options[i].value;
+		ok=1;
+		
+		if(i == 0)
+		  freqUnits = "MHz";
+		else if(i == 1)
+		  freqUnits = "GHz";
+	    }
+     }
+    
+    if(ok==0)
+    {
+        alert("Had problems reading frequency units, contact author");
+	return false;
+	}
+
+
+    var ok=0;
+    for(var i=0;i<document.mstripForm.physunits.options.length;i++)
+    {
+            if(document.mstripForm.physunits.options[i].selected == true)
+	    {
+                PHYSSF = document.mstripForm.physunits.options[i].value;
+		ok=1;
+		
+		if(i == 0)
+		  physUnits = "mils";
+		else if(i == 1)
+		  physUnits = "inches";
+		else if(i == 2)
+		  physUnits = "cm";
+		else if(i == 3)
+		  physUnits = "mm";
+		else if(i == 4)
+		  physUnits = "micron";
+
+	    }
+     }
+    
+    if(ok==0)
+    {
+        alert("Had problems reading physical units, contact author");
+	return false;
+	}
+
+
+/* make sure there are substrate values */
+    if ((document.mstripForm.er.value == null || 
+         document.mstripForm.er.value.length == 0) ||
+        (document.mstripForm.H.value == null || 
+         document.mstripForm.H.length == 0) ||
+        (document.mstripForm.tmet.value == null || 
+         document.mstripForm.tmet.value.length == 0) ||
+        (document.mstripForm.rho.value == null || 
+         document.mstripForm.rho.value.length == 0) ||
+        (document.mstripForm.rough.value == null || 
+         document.mstripForm.rough.value.length == 0) ||
+        (document.mstripForm.tand.value == null || 
+         document.mstripForm.tand.value.length == 0)) {
+            msg = "All entries in the Substrate Paramaeters table\n " 
+	    msg = msg + "must be filled in (no blanks allowed)";
+            alert(msg);
+            return false;
+    }
+
+var tmpsf=25.4E-6/PHYSSF;
+/* check the substrate values */
+    if (!checkNumber(document.mstripForm.er, 1, 128, "Er", "") ||
+        !checkNumber(document.mstripForm.H, 0.01*tmpsf, 250*tmpsf, "Height",physUnits) ||
+        !checkNumber(document.mstripForm.tmet, 0, 10*tmpsf, "Metal Thickness",physUnits) ||
+        !checkNumber(document.mstripForm.rho, 0, 100, "Rho","") ||
+        !checkNumber(document.mstripForm.rough, 0, 10*tmpsf, "Roughness",physUnits) ||
+        !checkNumber(document.mstripForm.tand, 0, 10, "Loss Tangent","")){
+        return false;
+    }
+
+    if ((document.mstripForm.freq.value == null || document.mstripForm.freq.value.length == 0)){
+        msg = "The frequency must be specified to perform any\n";
+	msg = msg + "calculations.";
+	alert(msg);
+        return false;
+    }
+
+
+    if (!checkNumber(document.mstripForm.freq, 0, 30E9/FREQSF, "Frequency",freqUnits)){
+        return false;
+    }
+
+    return true;
+
+
+
+}
+
+function computeSynthesizeForm(form)
+{
+rel=1000000;
+
+/* check out the substrate table */
+    if( !checkSubstrate(document.mstripForm)){
+        return;
+    }
+
+/* make sure there are Z0 and len values */
+    if ((document.mstripForm.Z0.value == null || document.mstripForm.Z0.value.length == 0) ||
+        (document.mstripForm.len.value == null || document.mstripForm.len.value.length == 0)) {
+	msg = "Both Z0 and the Electrical Length must be specified\n";
+	msg = msg + "to synthesize the transmission line"
+	alert(msg);
+        return;
+    }
+
+
+/* check the values */
+    if (!checkNumber(document.mstripForm.Z0, 10, 150, "W",physUnits) ||
+        !checkNumber(document.mstripForm.len, 0, 100000, "L",physUnits)) {
+        return;
+    }
+
+
+document.mstripForm.calcstatus.value="RUNNING";
+RUNNINGS=1;
+
+
+/* load values from form */
+var    zd = eval(document.mstripForm.Z0.value);
+var    ld = eval(document.mstripForm.len.value);
+var    er = eval(document.mstripForm.er.value);
+
+with(Math){
+
+ 
+
+
+
+/*
+ temp value for l used while finding w
+*/
+var lx = 1000;
+
+
+/*
+ limits on the allowed range for w (in mils)
+XXX - should limit w/h, not w
+*/
+var wmin = 0.01;
+//var wmax = 1000;
+var wmax = 499;
+
+wmin = wmin*25.4e-6/PHYSSF;
+wmax = wmax*25.4e-6/PHYSSF;
+
+/*
+ impedance convergence tolerance (ohms)
+*/
+var abstol = 1e-6;
+
+/*
+ width relative convergence tolerance (mils) (set to 0.1 micron)
+*/
+var reltol = 0.1/25.4;
+reltol = reltol*25.4e-6/PHYSSF;
+
+var maxiters = 50;
+
+/*
+ take an initial guess at w and take a trial step to initialize the
+ iteration
+*/
+
+
+var A = ((er - 1)/(er + 1)) * (0.226 + 0.121/er) +
+        (PI/377)*sqrt(2*(er+1))*zd;
+
+var w_h = 4/(0.5*exp(A) - exp(-A));
+if(w_h > 2)
+{
+  var B = PI*377/(2*zd*sqrt(er));
+  w_h = (2/PI)*(B - 1 - log(2*B - 1) + ((er-1)/(2*er))*
+                        (log(B-1) + 0.293 - 0.517/er));
+}
+
+//alert("w is " + document.mstripForm.H.value*w_h);
+
+
+
+//var wx=50*25.4e-6/PHYSSF;
+var wx=document.mstripForm.H.value*w_h;
+if(wx >= wmax)
+{
+  wx=0.95*wmax;
+}
+
+if(wx <= wmin)
+{
+  wx=wmin;
+}
+//var wold = 1.001*wx;
+var wold = 1.01*wx;
+
+document.mstripForm.W.value = wold;
+document.mstripForm.L.value = lx;
+computeAnalyzeForm();
+var zold = computeAnalyzeForm();
+
+
+/*
+ check to see if we're too high or too low and bracket the
+ value for w.
+*/
+if(zold < zd){
+   wmax = wold;
+   }
+else{
+   wmin = wold;
+   }
+
+
+var iters = 0;
+var done = 0;
+
+while(done==0){
+
+   iters = iters + 1;
+   
+   document.mstripForm.W.value = wx;
+   document.mstripForm.L.value = lx;
+
+var   zo = computeAnalyzeForm();
+
+   if(zo < zd){wmax = wx;}
+   else{wmin = wx;}   
+
+   if(abs(zo - zd) < abstol){done = 1;}
+   else if(abs(wx-wold) < reltol){done = 1;}
+   else if(iters >= maxiters){
+   /* failed */
+      }
+   else{
+      /* calculate approximation to the derivative */
+var      dzdw = (zo-zold)/(wx-wold);
+      wold = wx;
+      zold = zo;
+      
+      /* take a newton iteration */
+      wx = wx - (zo-zd)/dzdw;
+      
+      /* if the newton iteration takes us out of the known range for w,
+         take a bisection step
+	 */
+      if((wx > wmax) | (wx < wmin)){wx = (wmin + wmax)/2;}
+      }
+      }      
+
+
+/*
+ speed of light
+*/
+var c = 2.997925e8;
+
+/*
+ velocity on line
+*/
+var keff = eval(document.mstripForm.keff.value);
+var v = c / sqrt(keff);
+
+var    f = eval(document.mstripForm.freq.value);
+       f = eval(f);
+       f = f*FREQSF;
+var l = (ld/360)*(v/f)/PHYSSF;
+
+
+/*
+ recalculate using real length to find loss 
+*/
+   document.mstripForm.L.value = round(100*l)/100;
+   document.mstripForm.W.value = round(100*wx)/100;
+
+   rel=1;
+
+   //the argument of 1 says "calculate the losses"
+   computeAnalyzeForm(1);
+
+}
+
+
+RUNNINGS=0;
+document.mstripForm.calcstatus.value="DONE";
+
+
+}
+
+
+function clearForm(form)
+{
+    document.mstripForm.W.value = "";
+    document.mstripForm.L.value = "";
+    document.mstripForm.Z0.value = "";
+    document.mstripForm.len.value = "";
+    document.mstripForm.keff.value = "";
+    document.mstripForm.loss.value = "";
+}
+
+function initValues()
+{
+    // Load default values into the forms
+    document.mstripForm.L.value = 1000;
+    document.mstripForm.W.value = 100;
+
+    document.mstripForm.freq.value = 500;
+
+    document.mstripForm.er.value = 4.8;
+    document.mstripForm.H.value = "58";
+    document.mstripForm.tmet.value = "1.5";
+    document.mstripForm.rho.value = "1";
+    document.mstripForm.rough.value = "0.055";
+    document.mstripForm.tand.value = "0.022";
+
+    computeAnalyzeForm(1);
+
+    // store the values in a cookie so that they are there the
+    // next time this page is loaded.
+    storeValues();
+}
+
+
+// Functions to handle cookies.  For this page
+// cookies are used to store the values in the substrate
+// table, the physical dimensions and the electrical
+// characteristics.  That way the user gets the same values
+// as the last time s/he used the program.
+
+// Sets cookie values. Expiration date is optional
+//
+function setCookie(name, value, expire) {
+  document.cookie = name + "=" + escape(value)
+  + ((expire == null) ? "" : ("; expires=" + expire.toGMTString()))
+}
+
+function getCookie(Name) {
+  var search = Name + "="
+    if (document.cookie.length > 0)
+    { // if there are any cookies
+      offset = document.cookie.indexOf(search)
+      if (offset != -1)
+      { // if cookie exists
+        offset += search.length
+        // set index of beginning of value
+        end = document.cookie.indexOf(";", offset)
+        // set index of end of cookie value
+        if (end == -1)
+            end = document.cookie.length
+        return unescape(document.cookie.substring(offset, end))
+      }
+    }
+}
+
+
+function register(name) {
+  var today = new Date()
+  var expires = new Date()
+  expires.setTime(today.getTime() + 1000*60*60*24*365)
+  setCookie("DansMicrostripJavascriptCalculator", name, expires)
+}
+
+function loadValues()
+{
+
+  var all = getCookie("DansMicrostripJavascriptCalculator");
+  if (all == null)
+  {
+    initValues();
+    }
+  else
+  {
+
+    var ind=0;
+
+    // get the cookie version number
+    var cookieVer = all.substring(ind,all.indexOf(" ",ind));
+    ind = all.indexOf(" ",ind)+1;
+    all = all.substring(ind,all.lastIndexOf(" ")+1);
+
+    //alert("cookie version is " + cookieVer + " from stored cookie");
+    // call the correct version of loadValues to match the cookie
+    // version.
+    if(cookieVer == 1.0)
+        loadValues1_0(all);
+    else if(cookieVer == 1.1)
+        loadValues1_1(all);
+    else
+        badCookieMsg();
+
+    }
+}
+
+function badCookieMsg()
+{
+  alert("The cookie on your computer for this page is corrupted.\n" +
+	"Default values will be loaded into the forms and a new cookie\n" +
+        "will be generated.  Changes you make to the form will be\n" + 
+	"stored in a new cookie and will be reloaded the next time\n" +
+	"you visit this page.");
+
+  // generate default values
+  initValues();
+
+  // store them in a new cookie
+  storeValues();
+}
+
+// Cookie verison 1.0 loadValues() routine
+function loadValues1_0(all)
+{
+  var ind=0;
+
+ 
+  document.mstripForm.L.value = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+
+  document.mstripForm.W.value  = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+
+  document.mstripForm.Z0.value  = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+  document.mstripForm.len.value  = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+
+  document.mstripForm.freq.value  = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+
+  document.mstripForm.er.value  = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+  document.mstripForm.H.value  = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+  document.mstripForm.tmet.value  = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+  document.mstripForm.rho.value  = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+  document.mstripForm.rough.value = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+  document.mstripForm.tand.value  = all.substring(ind,all.indexOf(" ",ind));
+
+}
+
+// Cookie verison 1.1 loadValues() routine
+function loadValues1_1(all)
+{
+  var ind=0;
+
+ 
+  document.mstripForm.L.value = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+
+  document.mstripForm.W.value  = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+
+  document.mstripForm.Z0.value  = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+  document.mstripForm.len.value  = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+
+  document.mstripForm.freq.value  = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+
+  document.mstripForm.er.value  = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+  document.mstripForm.H.value  = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+  document.mstripForm.tmet.value  = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+  document.mstripForm.rho.value  = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+  document.mstripForm.rough.value = all.substring(ind,all.indexOf(" ",ind));
+  ind = all.indexOf(" ",ind)+1;
+  document.mstripForm.tand.value  = all.substring(ind,all.indexOf(" ",ind));
+
+  var i,j;
+
+  ind = all.indexOf(" ",ind)+1;
+  j  = all.substring(ind,all.indexOf(" ",ind));
+  for(i=0;i<4;i++)
+  {
+    if(i==j)
+      document.mstripForm.physunits.options[i].selected=true;
+    else
+      document.mstripForm.physunits.options[i].selected=false;
+  }
+
+  ind = all.indexOf(" ",ind)+1;
+  j  = all.substring(ind,all.indexOf(" ",ind));
+  for(i=0;i<2;i++)
+  {
+    if(i==j)
+      document.mstripForm.funits.options[i].selected=true;
+    else
+      document.mstripForm.funits.options[i].selected=false;
+  }
+
+  ind = all.indexOf(" ",ind)+1;
+  if(all.substring(ind,all.indexOf(" ",ind)).toLowerCase() == "true")
+  {
+    document.cookieForm.noCookie.checked=true;
+  }
+  else
+  {
+    document.cookieForm.noCookie.checked=false;
+  }
+
+
+}
+
+function valChanged()
+{
+  document.mstripForm.calcstatus.value="VALUES OUT OF SYNC";
+  storeValues();
+}
+
+function storeValues(force)
+{
+
+  // if the noCookie check box is checked, return without
+  // sending a cookie unless the force flag over rides
+  // the check box.  The force flag is used to make the
+  // cookie which stores noCookie=true to be sent
+  if( (force == null) && (document.cookieForm.noCookie.checked == true))
+    return;
+
+  //alert("document.cookieForm.noCookie.checked=" +
+  //  document.cookieForm.noCookie.checked);
+
+  var physind;
+  var freqind;
+  
+  var i;
+
+  i=0;
+  while((document.mstripForm.physunits.options[i].selected == false) && 
+        (i <= 4))
+    i++;
+  if(document.mstripForm.physunits.options[i].selected == false)
+  {
+    alert("Error in storeValues()/nNo physical units selected./n" +
+          "Please contact the author.");
+    physind=0;
+  }
+  else
+  {
+    physind = i;
+  }
+
+
+  i=0;
+  while((document.mstripForm.funits.options[i].selected == false) &&
+     (i <= 1))
+    i++;
+  if(document.mstripForm.funits.options[i].selected == false)
+  {
+    alert("Error in storeValues()/nNo frequency units selected./n" +
+          "Please contact the author.");
+    freqind=0;
+  }
+  else
+  {
+    freqind = i;
+  }
+
+
+  //alert("Freqind = " + freqind + " Physind = " + physind);
+
+    // store values
+    register(
+    kCOOKIEVER + " " +
+    document.mstripForm.L.value + " " + 
+    document.mstripForm.W.value + " " +
+
+    document.mstripForm.Z0.value + " " +
+    document.mstripForm.len.value + " " + 
+
+    document.mstripForm.freq.value + " " + 
+
+    document.mstripForm.er.value + " " + 
+    document.mstripForm.H.value + " " +
+    document.mstripForm.tmet.value + " " +
+    document.mstripForm.rho.value + " " +
+    document.mstripForm.rough.value + " " +
+    document.mstripForm.tand.value + " " +
+    physind + " " + freqind + " " +
+    document.cookieForm.noCookie.checked + " ");
+
+}
+
+
+<!-- done hiding from old browsers -->
+
+</SCRIPT>
+</HEAD>
+<BODY bgcolor="#FFFFFF" text="#000000" onLoad="loadValues()" onUnload="storeValues()">
+
+
+<div align=center><h1><font COLOR="#0000FF">
+Microstrip Analysis/Synthesis <a name="top">Calculator</a>
+</font></h1></div>
+
+<FONT COLOR="#FF0000" SIZE=-1>
+<P>
+<CENTER>
+Version 1.6A
+</CENTER>
+</P>
+</FONT>
+
+<P><EM>NOTE:  mcalc is considered to be obsolete.</EM>  While mcalc has enjoyed considerably
+more popularity than I ever imagined when I first released it, I am no longer actively 
+maintaining it.  This page will remain here but will probably not be updated.  Users
+are encouraged to try out <a href="http://wcalc.sf.net">wcalc</a> which is also an open source
+tool.  <a href="http://wcalc.sf.net">wcalc</a> is the replacement for mcalc and is where
+my efforts in this area are focused.  Besides offering the same
+<a href="http://wcalc.sourceforge.net/cgi-bin/microstrip.cgi">online microstrip calculations</a> that this tool has,
+<a href="http://wcalc.sf.net">wcalc</a> supports many other structures besides microstrip
+and many other ways to access the tool besides a web front end.
+</P>
+
+<P>
+Any and all comments are welcome.  Please let
+me know if this
+page is useful to you!  User responses will help motivate me
+to maintain and improve this page.   User contributed bug
+fixes are the most useful!
+</P>
+
+<UL>
+<LI><a href="#Overview">Overview</a>
+<LI><a href="#Features">Features</a>
+<LI><a href="#Substrate">Substrate Parameters</a>
+<LI><a href="#Accuracy">Accuracy</a>
+<LI><a href="#calc">Microstrip Calculator</a>
+<LI><a href="#References">References</a>
+<LI><a href="#Cookies">What's With Those Cookies?</a>
+<LI><a href="#Disclaimer">Disclaimer</a>
+<LI><a href="#Bugs">Bug Reports and More Information</a>
+
+</UL>
+
+<hr>
+
+<H2><a name="Overview">Overview</a></H2>
+
+<p>
+This calculator provides accurate microstrip transmission line analysis and
+synthesis.  A cross-section of a microstrip transmission line is shown below.
+The electrical parameters may be determined from specified physical
+parameters, or the physical parameters required to meet a given set of
+electrical parameters may be found.</p>
+
+<P ALIGN=center>
+<IMG SRC="mstrip.gif" ALT="Microstrip Cross-section" 
+     WIDTH="366" HEIGHT="184">
+</P>
+<P>
+<FONT COLOR="#FF0000">
+Go to the <A HREF="#calc">calculator</A> section.
+</FONT>
+</P>
+<P>Return to the <A HREF="#top">top</A>.</P>
+ 
+<hr>
+<H2><A NAME="Features">Features</A></H2>
+
+<P>
+In analysis mode, the physical width, W, and length, L, of the
+transmission line are entered and the program calculates the resulting
+effective dielectric constant, Keff, the characteristic impedance, Z0,
+the electrical length, and the loss of the line.
+</p>
+
+<P>
+In synthesis mode, the desired characteristic impedance and electrical
+length are entered and the program calculates the required width and
+length for the transmission line.
+</P>
+
+<P>
+The substrate characteristics and operating frequency must be specified
+for both analysis and synthesis.
+</p>
+
+<P>
+<FONT COLOR="#FF0000">
+Go to the <A HREF="#calc">calculator</A> section.
+</FONT>
+</P>
+
+<P>Return to the <A HREF="#top">top</A>.</P>
+
+<hr>
+<H2><A NAME="Substrate">Substrate Parameters</A></H2>
+
+<CENTER>
+<TABLE BORDER=2>
+<CAPTION>
+Substrate Parameters
+</CAPTION>
+
+<TR>
+<TD>Parameter</TD>
+<TD>Description</TD>
+<TD>Units</TD>
+</TR>
+
+<TR>
+<TD><A HREF=erinfo.html>Er</A></TD>
+<TD>Relative permittivity of the substrate.</TD>
+<TD>-</TD>
+</TR>
+
+<TR>
+<TD>H</TD>
+<TD>Substrate dielectric thickness.</TD>
+<TD>{Phys. Units}</TD>
+</TR>
+
+<TR>
+<TD><A HREF=tmetinfo.html>Tmet</A></TD>
+<TD>
+Metal thickness.  This value<br>
+influences both Z0, and the<br>
+loss of the line.
+</TD>
+<TD>{Phys. Units}</TD>
+</TR>
+
+<TR>
+<TD><A HREF=rhoinfo.html>Rho</A></TD>
+<TD>
+Metal resistivity relative<br>
+to copper.  This value is <br>
+only used for loss calculations.
+</TD>
+<TD>-</TD>
+</TR>
+
+<TR>
+<TD><A HREF=rghinfo.html>Rough</A></TD>
+<TD>
+Metal surface roughness.  This<br>
+is the rms deviation of the <br>
+conductor surface from a plane.<br>
+A rough surface increases losses<br>
+in the line.
+</TD>
+<TD>{Phys. Units}<br>rms</TD>
+</TR>
+
+<TR>
+<TD><A HREF=erinfo.html>Tan<FONT FACE=Symbol>d</FONT></A></TD>
+<TD>
+Loss tangent of the dielectric.<br>
+This value is only used for loss<br>
+calculations.
+</TD>
+<TD>-</TD>
+</TR>
+
+
+</TABLE>
+</CENTER>
+
+
+
+<P>
+<FONT COLOR="#FF0000">
+Go to the <A HREF="#calc">calculator</A> section.
+</FONT>
+</P>
+
+<P>Return to the <A HREF="#top">top</A>.</P>
+
+<HR>
+
+<H2><A NAME="Accuracy">Accuracy</A></H2>
+<P>
+The closed form expressions used by this calculator for characteristic
+impedance and effective dielectric constant are highly optimized
+and accurate expressions.  They offer the ultimate in accuracy without
+resorting to an iterative numerical solution of Maxwell's Equations
+for the entire structure.  Most calculations will result in better
+than 1% accuracy.  A more detailed accuracy description will be
+added to this page in the future.
+</P>
+<P>
+The loss equations include dielectric losses and conductor losses.
+Please note that radiation losses are not included.  The loss values
+are somewhat less accurate than the characteristic impedance 
+and effective dielectric constant values.  It is still believed that
+the numbers obtained are useful.
+</P>
+
+<P>
+The loss equations included here assume that the conductor thickness
+is at least several skin depths thick.  When this assumption is
+not met, the loss equations are somewhat suspect.  When the skin
+depth is larger than the metal thickness, a dc solution is used
+for loss calculations.  This causes a small discontinuity in the
+conduction loss vs frequency curve as the skin depth crosses the
+metal thickness.  If anyone has a good reference on better loss
+calculations in this region, please let 
+me know.
+</P>
+
+<P>
+If the conductor thickness is set to 0, only dielectric losses are
+considered and the metal is assumed to be lossless.
+</P>
+
+<P>Return to the <A HREF="#top">top</A>.</P>
+
+<hr>
+<A NAME="calc"></A>
+<CENTER>
+
+<FORM method=POST NAME="mstripForm">
+
+<TABLE border=0>
+
+<TR>
+<TD>
+<font COLOR="#FF0000"><font SIZE="+1">
+Analysis/Synthesis Values
+</font></font>
+</TD>
+<TD></TD>
+<TD>
+<font COLOR="#FF0000"><font SIZE="+1">
+Output Values
+</font></font>
+</TD>
+
+</TR>
+
+
+<TR><TD>
+<TABLE border=4>
+
+
+<TR>
+
+<TD><DIV ALIGN=CENTER>Width</DIV></TD>
+<TD><INPUT TYPE=TEXT NAME=W  SIZE=7 onChange="valChanged()"> </TD>
+<TD><INPUT TYPE="button" VALUE="---&gt"   
+  onClick="computeAnalyzeForm(1)"></TD>
+<TD><DIV ALIGN=CENTER>Z0<br>(Ohms)</DIV></TD>
+<TD><INPUT TYPE=TEXT NAME=Z0   SIZE=7 > </TD>
+</TR>
+
+
+<TR>
+<TD><DIV ALIGN=CENTER>Length</DIV></TD>
+<TD><INPUT TYPE=TEXT NAME=L  SIZE=7 > </TD>
+<TD><INPUT TYPE="button" VALUE="&lt;---"   
+  onClick="computeSynthesizeForm(this.form)"></TD>
+<TD><DIV ALIGN=CENTER>Elec. Len.<br>(degrees)</DIV></TD>
+<TD><INPUT TYPE=TEXT NAME=len  SIZE=7 > </TD>
+</TR>
+
+
+<TR>
+<TD><DIV ALIGN=CENTER>Frequency</DIV></TD>
+<TD><INPUT TYPE=TEXT NAME=freq  SIZE=7 onChange="valChanged()"> </TD>
+<TD></TD>
+<TD>
+<SELECT NAME=funits onChange="valChanged()">
+<OPTION VALUE=1000000 selected>MHz
+<OPTION VALUE=1000000000 >GHz
+</SELECT>
+</TD>
+</TR>
+
+</TABLE>
+</TD>
+
+<TD width=25></TD>
+<TD>
+
+<TABLE border=4>
+<TR>
+  <TD><DIV ALIGN=CENTER>Keff</DIV></TD>
+  <TD><INPUT TYPE=TEXT NAME=keff   SIZE=7 > </TD>
+  <TD></TD>
+  <TD><DIV ALIGN=CENTER>Loss<br>(dB)</DIV></TD>
+  <TD><INPUT TYPE=TEXT NAME=loss  SIZE=7 > </TD>
+</TR>
+
+<TR>
+  <TD>Physical<br>Units</TD>
+  <TD>
+  <SELECT NAME=physunits onChange="valChanged()">
+  <OPTION VALUE=0.0000254 selected>mils
+  <OPTION VALUE=0.0254 >inches
+  <OPTION VALUE=0.01 >cm
+  <OPTION VALUE=0.001 >mm
+  <OPTION VALUE=0.000001 >micron
+  </SELECT>
+  </TD>
+
+  <TD></TD>
+
+  <TD><DIV ALIGN=CENTER>Loss per length<br>(dB/{Phys. Unit})</DIV></TD>
+  <TD><INPUT TYPE=TEXT NAME=lossPerLen  SIZE=7 > </TD>
+</TR>
+
+<TR>
+  <TD>Calculation<br>Status</TD>
+  <TD>
+  <INPUT TYPE=TEXT NAME="calcstatus" VALUE="JUST LOADED" DISABLED>
+  </TD>
+  <TD></TD>
+  <TD>Skin depth<br>{Phys. Units}</TD>
+  <TD><INPUT TYPE=TEXT NAME=skinDepth  SIZE=7 > </TD>
+</TR>
+
+<TR>
+  <TD>DeltaL<BR>{Phys. Units}</TD>
+  <TD>
+  <INPUT TYPE=TEXT NAME="deltal" SIZE=7>  </TD>
+  <TD></TD>
+  <TD>Delay<BR>(ns)</TD>
+  <TD>
+  <INPUT TYPE=TEXT NAME="delay" SIZE=7>  </TD>
+</TR>
+<TR>
+  <TD>Len.-DeltaL<BR>{Phys. Units}</TD>
+  <TD>
+  <INPUT TYPE=TEXT NAME="Lmdeltal" SIZE=7>  </TD>
+  <TD></TD>
+  <TD></TD>
+  <TD></TD>
+</TR>
+
+</TABLE>
+
+</TD></TR>
+
+
+
+<TR><TD><P><br></P></TD></TR>
+
+<TR><TD>
+
+<FONT COLOR="#FF0000"><FONT SIZE="+1">
+Substrate Parameters
+</FONT></FONT>
+</TD></TR>
+
+<TR><TD>
+
+<TABLE border=4>
+
+<TR>
+<TD><DIV ALIGN=CENTER><A HREF=erinfo.html>Er</A></DIV></TD>
+<TD><INPUT TYPE=TEXT NAME=er  SIZE=7 onChange="valChanged()"> </TD>
+<TD></TD>
+<TD><DIV ALIGN=CENTER><A HREF=rhoinfo.html>Rho</A></DIV></TD>
+<TD><INPUT TYPE=TEXT NAME=rho  SIZE=7 onChange="valChanged()"> </TD>
+</TR>
+
+
+<TR>
+<TD><DIV ALIGN=CENTER>H</DIV></TD>
+<TD><INPUT TYPE=TEXT NAME=H  SIZE=7 onChange="valChanged()"> </TD>
+<TD></TD>
+<TD><DIV ALIGN=CENTER><A HREF=rghinfo.html>Rough</A></DIV></TD>
+<TD><INPUT TYPE=TEXT NAME=rough   SIZE=7 onChange="valChanged()"> </TD>
+</TR>
+
+
+<TR>
+<TD><DIV ALIGN=CENTER><A HREF=tmetinfo.html>Tmet</A></DIV></TD>
+<TD><INPUT TYPE=TEXT NAME=tmet  SIZE=7 onChange="valChanged()"> </TD>
+<TD></TD>
+<TD><DIV ALIGN=CENTER>
+<A HREF=erinfo.html>Tan<FONT FACE=Symbol>d</FONT></A></DIV>
+</TD>
+<TD><INPUT TYPE=TEXT NAME=tand   SIZE=7 onChange="valChanged()"> </TD>
+</TR>
+
+</TABLE>
+</TD>
+
+<TD></TD>
+
+<TD>
+<IMG SRC="mstrip.gif" ALT="Microstrip Cross-section" 
+     WIDTH="366" HEIGHT="184">
+</TD>
+
+</TR>
+</TABLE>
+
+
+</FORM>
+
+
+
+</CENTER>
+
+<P>Return to the <A HREF="#top">top</A>.</P>
+<hr>
+
+<H2><A NAME="References">Selected References</A></H2>
+<P>
+E. Hammerstad and O. Jensen, "Accurate Models for Microstrip Computer-
+Aided Design" IEEE MTT-S, <em>International Symposium Digest</em>, Washington
+D.C., May 1980, pp. 407-409
+</P>
+
+<P>
+M. Kirschning and R. H. Jansen, "Accurate Model for Effective Dielectric
+  Constant of Microstrip with Validity up to Millimetre-Wave Frequencies",
+  <em>Electronics Letters</em>, Vol 18, No. 6, March 18th, 1982, pp 272-273.
+</P>
+
+<P>
+Stanislaw Rosloniec,
+  <em>Algorithms For Computer-Aided Design of Linear Microwave Circuits</em>,
+   Archtech House, 1990
+</P>
+
+<P>
+E. H. Fooks and R. A. Zakarevicius,
+  <em>Microwave Engineering using Microstrip Circuits</em>,
+  Prentice-Hall, 1990
+</P>
+<P>
+E. O. Hammerstad, Edited by F. Bekkadal,
+  <em>Microstrip Handbook</em>, ELAB Report No. STF44 A74169,
+  University of Trondheim, 1975.
+
+
+<P>Return to the <A HREF="#top">top</A>.</P>
+<hr>
+
+<H2><A NAME="Cookies">What's With Those Cookies?</A></H2>
+<P>
+If you're wondering why this page insists on sending you cookies,
+I will tell you.  Cookies are used to store the values you have
+entered into the forms on this page.  When you visit this site
+again, the values you had last time are reloaded into the page.
+This way, you don't have to re-enter values which you may want
+to use over and over again (such as the substrate parameters).
+I know I tend to use the same substrate over and over again.
+</P>
+<P>
+This is all that is done with cookies on this page.  I never see
+a record of what values you have chosen.  If you do not want this
+page to send you cookies, please check the no cookie option here.
+This will cause one final cookie to be sent to you (which you
+must accept for it to work).  The next time you load this page,
+it will see that you do not want new cookies and it will not
+send new ones.
+</P>
+<CENTER>
+<FORM method=POST NAME="cookieForm">
+<TABLE BORDER=2>
+<TR>
+<TD>
+<INPUT TYPE="checkbox"  NAME="noCookie" defaultChecked=false
+  onClick="storeValues()">No More Cookies
+</TD>
+</TR>
+</TABLE>
+</FORM>
+</CENTER>
+
+<P>Return to the <A HREF="#top">top</A>.</P>
+<hr>
+
+<H2><A NAME="Disclaimer">Disclaimer</A></H2>
+While I have done my best to verify the correct operation of this
+calculator, the author shall not be held liable for any damages
+resulting from the use of this page.
+
+<P>Return to the <A HREF="#top">top</A>.</P>
+<hr>
+
+
+<H2><A NAME="Bugs">Bug Reports and More Information</A></H2>
+Please report issues on the github page or better yet provide a fix.
+Note that this particular utility has been replaced by wcalc and so
+mcalc is considered to be in "critical bug fix only" mode.
+
+<P>Return to the <A HREF="#top">top</A>.</P>
+<hr>
+
+
+<P>Return to the <A HREF="#top">top</A>.</P>
+
+<hr>
+
+
+<!--FOOTER-->
+
+<center>
+<table border=0 cellpadding=0 cellspacing=0><tr>
+  <td width=25>&nbsp;</td>
+  <td valign="top" align="center">
+
+  <address>
+    <font color="#000000" size="-1">
+      mcalc
+      <a href="copying.html">Copyright and license information</a>
+    </font>
+  </address>
+
+  </td>
+</tr></table>
+</center>
+
+</BODY>
+
+</HTML>
