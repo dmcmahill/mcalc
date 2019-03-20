@@ -5,7 +5,7 @@ generally within a percent or so for the characteristic impedance which
 greatly exceeds the simplified formulations found in most text books.
 
 # online access 
-http://htmlpreview.github.io/?https://github.com/dmcmahill/mcalc/blob/master/index.html
+https://dmcmahill.github.io/mcalc/
 
 # local installation
 To install this package, simply clone the repo or download a zip and copy all the files
